@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>진원 찾기 활동 - 2023 튀르키예 지진</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif; background-color: #f3f4f6; color: #1f2937; margin: 0; padding: 0; }
+        #map { height: 500px; width: 100%; border-radius: 0.5rem; border: 1px solid #d1d5db; z-index: 1;}
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 1rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .input-field { width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 0.375rem; transition: border-color 0.2s; }
+        .input-field:focus { outline: none; border-color: #3b82f6; ring: 2px; ring-color: #93c5fd; }
+        .station-marker-label { background: white; border: 1px solid #374151; padding: 2px 5px; border-radius: 4px; font-weight: bold; font-size: 12px; white-space: nowrap; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+<div class="max-w-7xl mx-auto space-y-6">
+    <header class="text-center mb-8">
+        <h1 class="text-4xl font-extrabold text-gray-900 tracking-tight">지구과학 II: 진앙 위치 찾기</h1>
+        <p class="text-lg text-gray-600 mt-2">2023년 튀르키예-시리아 대지진 (Mw 7.8) 관측 자료 활용</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-1 space-y-6">
+            
+            <div class="glass-panel p-6">
+                <h2 class="text-xl font-bold mb-4 flex items-center"><svg class="w-6 h-6 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 1. 지진파 속도 설정</h2>
+                <p class="text-sm text-gray-600 mb-4">P파와 S파의 평균 속도를 입력하세요. (단위: km/s)</p>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">P파 속도 ($V_p$)</label>
+                        <input type="number" id="vp-input" value="6.5" step="0.1" class="input-field text-center font-semibold text-blue-700">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">S파 속도 ($V_s$)</label>
+                        <input type="number" id="vs-input" value="3.5" step="0.1" class="input-field text-center font-semibold text-red-700">
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 overflow-x-auto">
+                 <h2 class="text-xl font-bold mb-4 flex items-center"><svg class="w-6 h-6 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> 2. 관측소 데이터 및 진원 거리 계산</h2>
+                 <p class="text-sm text-gray-600 mb-4">각 관측소의 PS시를 초 단위로 입력하면 진원 거리가 자동 계산됩니다. 체크박스를 통해 지도 표시 여부를 켜고 끌 수 있습니다.</p>
+                 <table class="w-full text-sm text-left text-gray-500 min-w-[500px]">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-100">
+                        <tr>
+                            <th scope="col" class="px-2 py-2 rounded-tl-lg text-center border-r border-gray-200">표시</th>
+                            <th scope="col" class="px-3 py-2">관측소</th>
+                            <th scope="col" class="px-3 py-2">P파 도달</th>
+                            <th scope="col" class="px-3 py-2">S파 도달</th>
+                            <th scope="col" class="px-3 py-2 bg-yellow-50 text-center">PS시 (초) 입력</th>
+                            <th scope="col" class="px-3 py-2 rounded-tr-lg text-right">진원 거리 (km)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="station-table-body">
+                        <!-- Table rows will be generated here -->
+                    </tbody>
+                </table>
+                <div class="mt-4 flex justify-between items-center">
+                    <button id="draw-circles-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        지도에 원 그리기
+                    </button>
+                    <button id="reset-btn" class="text-gray-500 hover:text-red-500 text-sm underline">초기화</button>
+                </div>
+            </div>
+            
+             <div class="glass-panel p-6">
+                <h2 class="text-xl font-bold mb-4 flex items-center"><svg class="w-6 h-6 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg> 3. 진앙 분석 도구</h2>
+                <p class="text-sm text-gray-600 mb-3">지도에서 원이 교차하는 두 점을 클릭하여 공통현을 그리세요.</p>
+                <div class="space-y-3">
+                     <div class="flex items-center justify-between bg-gray-50 p-2 rounded border">
+                        <span class="text-sm font-medium text-gray-700">선택된 교점 수:</span>
+                        <span id="selected-points-count" class="font-bold text-indigo-600">0 / 2</span>
+                    </div>
+                    <button id="draw-chord-btn" disabled class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        공통현 그리기
+                    </button>
+                    <button id="find-epicenter-btn" disabled class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2">
+                        진앙 찾기 (공통현 교점)
+                    </button>
+                     <p id="instruction-text" class="text-xs text-red-500 text-center font-medium mt-2 hidden">교점 2개를 먼저 선택해주세요.</p>
+                </div>
+            </div>
+
+            <div id="depth-panel" class="glass-panel p-6 hidden">
+                <h2 class="text-xl font-bold mb-4 flex items-center"><svg class="w-6 h-6 mr-2 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg> 4. 진원 깊이 분석</h2>
+                <p class="text-sm text-gray-600 mb-3">지도에서 <b>관측소</b>를 클릭한 후, 찾은 <b>진앙(별표)</b>을 클릭하여 진원 깊이를 시각적으로 계산하세요.</p>
+                <div id="depth-result-container" class="bg-teal-50 border border-teal-200 p-3 rounded text-center hidden">
+                    <span id="depth-result" class="font-bold text-teal-800"></span>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="lg:col-span-2">
+            <div class="glass-panel p-2 h-full flex flex-col">
+                <div id="map" class="flex-grow"></div>
+                 <div id="result-info" class="p-4 bg-yellow-50 rounded-lg mt-4 hidden border border-yellow-200">
+                    <h3 class="font-bold text-lg text-yellow-800 mb-1 flex items-center">
+                        <svg class="w-5 h-5 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                        추정된 진앙 위치
+                    </h3>
+                    <p id="epicenter-coords" class="text-gray-700 font-mono text-lg"></p>
+                    <p class="text-sm text-gray-500 mt-2">* 실제 튀르키예 지진 진앙: 37.174°N, 37.032°E</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<script>
+    // 2023 Turkey Earthquake Data (Simplified for educational purposes)
+    // Approximate epicenter: 37.174 N, 37.032 E
+    // Data generated to roughly match the epicenter with given velocities
+    const stations = [
+        { id: 'S1', name: 'Gaziantep', lat: 37.066, lng: 37.383, pTime: '04:17:35.0', sTime: '04:17:39.5', expectedPs: 4.5 },
+        { id: 'S2', name: 'Kahramanmaras', lat: 37.575, lng: 36.922, pTime: '04:17:38.2', sTime: '04:17:45.3', expectedPs: 7.1 },
+        { id: 'S3', name: 'Adana', lat: 37.000, lng: 35.321, pTime: '04:17:58.5', sTime: '04:18:22.5', expectedPs: 24.0 },
+        { id: 'S4', name: 'Sanliurfa', lat: 37.167, lng: 38.793, pTime: '04:17:59.0', sTime: '04:18:23.5', expectedPs: 24.5 },
+        { id: 'S5', name: 'Hatay', lat: 36.200, lng: 36.166, pTime: '04:17:55.3', sTime: '04:18:16.8', expectedPs: 21.5 }
+    ];
+
+    let map;
+    let markers = [];
+    let circles = [];
+    let intersectionPoints = []; // Leaflet circle markers for clicked points
+    let chords = []; // Polylines for chords
+    let selectedIntersectionCoords = []; // Array of {lat, lng} for logic
+    
+    let epicenterMarker = null;
+    let epicenterLatLng = null;
+    let clickedStationForDepth = null;
+    let depthVisuals = [];
+
+    function initMap() {
+        // Center roughly on Turkey
+        map = L.map('map').setView([37.1, 37.0], 7);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // Add station markers
+        stations.forEach((station, index) => {
+            const icon = L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div style="background-color: #3b82f6; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`,
+                iconSize: [14, 14],
+                iconAnchor: [7, 7]
+            });
+
+            const marker = L.marker([station.lat, station.lng], { icon: icon }).addTo(map);
+            marker.bindTooltip(station.name, { permanent: true, direction: 'right', className: 'station-marker-label', offset: [10, 0] });
+            
+            station.marker = marker; // 제어를 위해 객체에 저장
+            marker.on('click', () => handleStationClick(station));
+            
+            markers.push(marker);
+        });
+        
+        // Setup Map click event for adding intersection points manually
+        map.on('click', function(e) {
+            handleMapClick(e.latlng);
+        });
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('station-table-body');
+        tbody.innerHTML = '';
+
+        stations.forEach((station, index) => {
+            if (station.visible === undefined) station.visible = true;
+
+            const tr = document.createElement('tr');
+            tr.className = 'border-b hover:bg-gray-50';
+            
+            tr.innerHTML = `
+                <td class="px-2 py-3 text-center border-r border-gray-200">
+                    <input type="checkbox" class="visibility-cb w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 cursor-pointer" data-index="${index}" ${station.visible ? 'checked' : ''}>
+                </td>
+                <td class="px-3 py-3 font-medium text-gray-900 whitespace-nowrap">${station.name}</td>
+                <td class="px-3 py-3 text-blue-600">${station.pTime}</td>
+                <td class="px-3 py-3 text-red-600">${station.sTime}</td>
+                <td class="px-3 py-3 bg-yellow-50/50">
+                    <input type="number" id="ps-${index}" class="ps-input w-20 p-1 text-center border border-yellow-300 rounded focus:ring-yellow-500 focus:border-yellow-500" placeholder="${station.expectedPs} (정답)" step="0.1">
+                </td>
+                <td class="px-3 py-3 text-right font-bold text-indigo-700" id="dist-${index}">-</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // Add event listeners to inputs
+        document.querySelectorAll('.ps-input').forEach((input, index) => {
+            input.addEventListener('input', () => calculateDistance(index));
+        });
+        
+        document.querySelectorAll('.visibility-cb').forEach(cb => {
+            cb.addEventListener('change', (e) => toggleStationVisibility(e.target.dataset.index, e.target.checked));
+        });
+        
+        document.getElementById('vp-input').addEventListener('input', recalculateAll);
+        document.getElementById('vs-input').addEventListener('input', recalculateAll);
+    }
+
+    function calculateDistance(index) {
+        const psInput = document.getElementById(`ps-${index}`).value;
+        const distEl = document.getElementById(`dist-${index}`);
+        
+        if (!psInput || isNaN(psInput)) {
+            distEl.innerText = '-';
+            stations[index].calculatedDistance = null;
+            checkDrawButtonState();
+            return;
+        }
+
+        const psTime = parseFloat(psInput);
+        const vp = parseFloat(document.getElementById('vp-input').value);
+        const vs = parseFloat(document.getElementById('vs-input').value);
+
+        if (vp <= vs || vp <= 0 || vs <= 0) {
+            distEl.innerText = '속도 오류';
+            return;
+        }
+
+        // d = (Vp * Vs) / (Vp - Vs) * PS시
+        const distance = ((vp * vs) / (vp - vs)) * psTime;
+        
+        distEl.innerText = distance.toFixed(1);
+        stations[index].calculatedDistance = distance;
+        checkDrawButtonState();
+    }
+
+    function recalculateAll() {
+        stations.forEach((_, index) => calculateDistance(index));
+    }
+
+    function checkDrawButtonState() {
+        const hasEnoughData = stations.filter(s => s.calculatedDistance > 0).length >= 2;
+        document.getElementById('draw-circles-btn').disabled = !hasEnoughData;
+    }
+
+    function drawCircles() {
+        clearMapVisuals(); // Clear existing
+        
+        stations.forEach(station => {
+            if (station.calculatedDistance > 0) {
+                // Convert distance in km to meters for Leaflet
+                const radiusMeters = station.calculatedDistance * 1000;
+                const circle = L.circle([station.lat, station.lng], {
+                    color: 'rgba(59, 130, 246, 0.8)', // blue-500
+                    fillColor: 'rgba(59, 130, 246, 0.1)',
+                    fillOpacity: 0.1,
+                    radius: radiusMeters,
+                    weight: 2
+                });
+                
+                station.circle = circle;
+                if (station.visible !== false) {
+                    circle.addTo(map);
+                }
+                circles.push(circle);
+            }
+        });
+        
+        // Provide feedback that circles are drawn and user should click intersections
+        if(circles.length >= 2) {
+             document.getElementById('instruction-text').classList.remove('hidden');
+             document.getElementById('instruction-text').innerText = "지도 위에서 원이 교차하는 두 점을 찾아 클릭하세요.";
+             document.getElementById('instruction-text').className = "text-sm text-blue-600 text-center font-bold mt-2 animate-pulse";
+        }
+    }
+
+    function handleMapClick(latlng) {
+        if (circles.length < 2) return; // Only allow clicks if circles exist
+        
+        if (selectedIntersectionCoords.length >= 2) {
+             // If already 2 selected, replace the oldest one or just warn
+             alert("이미 두 개의 교점을 선택했습니다. '공통현 그리기'를 누르거나, 초기화 후 다시 시도하세요.");
+             return;
+        }
+
+        // Add visual marker
+        const pointMarker = L.circleMarker(latlng, {
+            radius: 6,
+            color: '#dc2626', // red-600
+            fillColor: '#fca5a5',
+            fillOpacity: 0.8,
+            weight: 2
+        }).addTo(map);
+        
+        intersectionPoints.push(pointMarker);
+        selectedIntersectionCoords.push(latlng);
+        
+        updateIntersectionUI();
+    }
+
+    function updateIntersectionUI() {
+        const count = selectedIntersectionCoords.length;
+        document.getElementById('selected-points-count').innerText = `${count} / 2`;
+        
+        const drawBtn = document.getElementById('draw-chord-btn');
+        if (count === 2) {
+            drawBtn.disabled = false;
+            document.getElementById('instruction-text').classList.add('hidden');
+        } else {
+            drawBtn.disabled = true;
+        }
+    }
+
+    function drawChord() {
+        if (selectedIntersectionCoords.length !== 2) return;
+
+        const p1 = selectedIntersectionCoords[0];
+        const p2 = selectedIntersectionCoords[1];
+
+        // Draw line extending past the points slightly for better visualization
+        // Simple linear extrapolation for visual effect
+        const dLat = p2.lat - p1.lat;
+        const dLng = p2.lng - p1.lng;
+        
+        const extP1 = [p1.lat - dLat*2, p1.lng - dLng*2];
+        const extP2 = [p2.lat + dLat*2, p2.lng + dLng*2];
+
+        const chord = L.polyline([extP1, extP2], {
+            color: '#4f46e5', // indigo-600
+            weight: 2,
+            dashArray: '5, 5'
+        }).addTo(map);
+
+        chords.push(chord);
+
+        // Reset points selection for the next chord
+        selectedIntersectionCoords = [];
+        intersectionPoints.forEach(p => map.removeLayer(p));
+        intersectionPoints = [];
+        updateIntersectionUI();
+
+        // Check if we can find epicenter
+        if (chords.length >= 2) {
+            document.getElementById('find-epicenter-btn').disabled = false;
+             document.getElementById('instruction-text').classList.remove('hidden');
+             document.getElementById('instruction-text').innerText = "공통현이 교차하는 점이 진앙입니다! '진앙 찾기' 버튼을 누르세요.";
+             document.getElementById('instruction-text').className = "text-sm text-green-600 text-center font-bold mt-2 animate-bounce";
+        } else {
+             document.getElementById('instruction-text').classList.remove('hidden');
+             document.getElementById('instruction-text').innerText = "다른 두 원의 교점을 클릭하여 두 번째 공통현을 만드세요.";
+             document.getElementById('instruction-text').className = "text-sm text-blue-600 text-center font-bold mt-2 animate-pulse";
+        }
+    }
+
+    function findEpicenter() {
+        if (chords.length < 2) return;
+
+        // Mathematical intersection of two line segments is complex due to earth curvature.
+        // For this educational tool, we will approximate using the first two chords' segments.
+        // Given lines defined by 2 points each, we find the intersection.
+        
+        // Get lat/lng arrays from the polylines
+        const line1 = chords[0].getLatLngs();
+        const line2 = chords[1].getLatLngs();
+
+        const p1 = line1[0], p2 = line1[1];
+        const p3 = line2[0], p4 = line2[1];
+
+        const intersection = getLineIntersection(p1.lat, p1.lng, p2.lat, p2.lng, p3.lat, p3.lng, p4.lat, p4.lng);
+
+        if (intersection) {
+            const epicenterIcon = L.divIcon({
+                className: 'epicenter-icon',
+                html: `<svg style="color: #dc2626; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.5));" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-8 h-8"><path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clip-rule="evenodd" /></svg>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+            
+            epicenterLatLng = L.latLng(intersection.lat, intersection.lng);
+            epicenterMarker = L.marker(epicenterLatLng, {icon: epicenterIcon, zIndexOffset: 1000}).addTo(map)
+             .bindPopup("<b>추정된 진앙</b><br><span class='text-xs text-gray-500'>관측소를 클릭한 후 진앙을 클릭하면<br>진원 깊이를 구할 수 있습니다.</span>");
+            
+            epicenterMarker.on('click', handleEpicenterClick);
+            epicenterMarker.openPopup();
+
+            // Display results
+            document.getElementById('result-info').classList.remove('hidden');
+            document.getElementById('epicenter-coords').innerText = `위도: ${intersection.lat.toFixed(3)}°N, 경도: ${intersection.lng.toFixed(3)}°E`;
+            document.getElementById('instruction-text').classList.add('hidden');
+            
+            document.getElementById('depth-panel').classList.remove('hidden');
+            
+            // Pan to epicenter
+            map.flyTo([intersection.lat, intersection.lng], 8, { duration: 1 });
+
+        } else {
+            alert("공통현이 교차하지 않습니다. 점을 다시 정확히 찍어주세요.");
+        }
+    }
+
+    // Helper: Line intersection algorithm
+    function getLineIntersection(p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y) {
+        let s1_x, s1_y, s2_x, s2_y;
+        s1_x = p1_x - p0_x;     s1_y = p1_y - p0_y;
+        s2_x = p3_x - p2_x;     s2_y = p3_y - p2_y;
+
+        let s, t;
+        let denominator = (-s2_x * s1_y + s1_x * s2_y);
+        
+        if (denominator === 0) return null; // Collinear or parallel
+
+        s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / denominator;
+        t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / denominator;
+
+        // Assuming infinite lines for the chord intersection
+        let i_x = p0_x + (t * s1_x);
+        let i_y = p0_y + (t * s1_y);
+        
+        return { lat: i_x, lng: i_y };
+    }
+
+    function clearMapVisuals() {
+        circles.forEach(c => map.removeLayer(c));
+        circles = [];
+        intersectionPoints.forEach(p => map.removeLayer(p));
+        intersectionPoints = [];
+        chords.forEach(c => map.removeLayer(c));
+        chords = [];
+        selectedIntersectionCoords = [];
+        
+        if (epicenterMarker) {
+            map.removeLayer(epicenterMarker);
+            epicenterMarker = null;
+            epicenterLatLng = null;
+        }
+        
+        depthVisuals.forEach(layer => map.removeLayer(layer));
+        depthVisuals = [];
+        clickedStationForDepth = null;
+
+        // Remove leftover markers safely
+        map.eachLayer((layer) => {
+            if (layer instanceof L.Marker && !markers.includes(layer) && layer !== epicenterMarker) {
+                map.removeLayer(layer);
+            }
+        });
+
+        updateIntersectionUI();
+        document.getElementById('draw-chord-btn').disabled = true;
+        document.getElementById('find-epicenter-btn').disabled = true;
+        document.getElementById('result-info').classList.add('hidden');
+        document.getElementById('instruction-text').classList.add('hidden');
+        document.getElementById('depth-panel').classList.add('hidden');
+        document.getElementById('depth-result-container').classList.add('hidden');
+    }
+
+    function resetAll() {
+        document.querySelectorAll('.ps-input').forEach(input => input.value = '');
+        stations.forEach(s => s.calculatedDistance = null);
+        recalculateAll();
+        clearMapVisuals();
+        map.setView([37.1, 37.0], 7);
+    }
+
+    // --- 추가 기능 구현 ---
+
+    function toggleStationVisibility(index, isVisible) {
+        const station = stations[index];
+        station.visible = isVisible;
+        if (isVisible) {
+            if (station.marker) map.addLayer(station.marker);
+            if (station.circle && station.calculatedDistance > 0) map.addLayer(station.circle);
+        } else {
+            if (station.marker) map.removeLayer(station.marker);
+            if (station.circle) map.removeLayer(station.circle);
+        }
+    }
+
+    function clearIntersectionSelection() {
+        selectedIntersectionCoords = [];
+        intersectionPoints.forEach(p => map.removeLayer(p));
+        intersectionPoints = [];
+        updateIntersectionUI();
+    }
+
+    // 1. ESC 키 초기화 이벤트
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            clearIntersectionSelection();
+        }
+    });
+
+    // 3. 진원 깊이 계산 로직
+    function handleStationClick(station) {
+        if (!epicenterLatLng) return; // 진앙이 찾아진 상태에서만 동작
+        clickedStationForDepth = station;
+        L.popup()
+            .setLatLng([station.lat, station.lng])
+            .setContent(`<div class="text-center"><b>${station.name}</b> 선택됨<br><span class="text-xs text-teal-600 font-bold">이제 진앙(별표)을 클릭하세요.</span></div>`)
+            .openOn(map);
+    }
+
+    function handleEpicenterClick() {
+        if (!clickedStationForDepth) {
+            alert("먼저 지도에서 기준이 될 관측소를 클릭해주세요.");
+            return;
+        }
+        drawDepthVisuals(clickedStationForDepth);
+        clickedStationForDepth = null; // 선택 초기화
+        map.closePopup();
+    }
+
+    // 지도 상 기하학적 계산을 위한 유틸리티
+    function toRad(deg) { return deg * Math.PI / 180; }
+    function toDeg(rad) { return rad * 180 / Math.PI; }
+
+    function calculateBearing(lat1, lng1, lat2, lng2) {
+        const phi1 = toRad(lat1), phi2 = toRad(lat2);
+        const lam1 = toRad(lng1), lam2 = toRad(lng2);
+        const y = Math.sin(lam2 - lam1) * Math.cos(phi2);
+        const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(lam2 - lam1);
+        return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    function calculateDestination(lat, lng, distKm, bearing) {
+        const R = 6371; // 지구 반지름
+        const d = distKm / R;
+        const brng = toRad(bearing);
+        const phi1 = toRad(lat), lam1 = toRad(lng);
+        const phi2 = Math.asin(Math.sin(phi1)*Math.cos(d) + Math.cos(phi1)*Math.sin(d)*Math.cos(brng));
+        const lam2 = lam1 + Math.atan2(Math.sin(brng)*Math.sin(d)*Math.cos(phi1), Math.cos(d)-Math.sin(phi1)*Math.sin(phi2));
+        return L.latLng(toDeg(phi2), toDeg(lam2));
+    }
+
+    function drawDepthVisuals(station) {
+        // 기존 그려진 깊이 분석 선들 지우기
+        depthVisuals.forEach(layer => map.removeLayer(layer));
+        depthVisuals = [];
+
+        const S = L.latLng(station.lat, station.lng);
+        const E = epicenterLatLng;
+        const d = station.calculatedDistance; // 진원 거리
+        const delta = map.distance(S, E) / 1000; // 진앙 거리 (km 단위)
+
+        if (!d || delta > d) {
+            alert("계산 오류: 진앙 거리가 진원 거리보다 큽니다. 데이터 오차로 인해 이 관측소에서는 깊이를 시각화할 수 없습니다.");
+            return;
+        }
+
+        // 피타고라스 정리를 이용한 진원 깊이 계산 h = sqrt(d^2 - delta^2)
+        const h = Math.sqrt(d * d - delta * delta);
+
+        // 시각화 1: 관측소에서 진앙까지의 선분 (진앙 거리)
+        const seLine = L.polyline([S, E], {color: 'black', weight: 2, dashArray: '5, 5'}).addTo(map);
+        depthVisuals.push(seLine);
+
+        // 시각화 2: 진앙에서 수직으로 내려가는 현 (진원 깊이 표현)
+        // 관측소 -> 진앙 방향의 방위각을 구하고, 거기서 90도 양옆으로 깊이(h)만큼 떨어진 두 점을 이음
+        const bearingES = calculateBearing(E.lat, E.lng, S.lat, S.lng);
+        const p1 = calculateDestination(E.lat, E.lng, h, bearingES + 90);
+        const p2 = calculateDestination(E.lat, E.lng, h, bearingES - 90);
+        const chordLine = L.polyline([p1, p2], {color: '#14b8a6', weight: 4}).addTo(map); // teal-500
+        depthVisuals.push(chordLine);
+
+        // UI 결과 표시
+        document.getElementById('depth-result').innerHTML = `<b>${station.name}</b> 기준 계산 결과<br>진앙 거리(Δ) = ${delta.toFixed(1)} km<br>진원 깊이(h) = 약 <b>${h.toFixed(1)}</b> km`;
+        document.getElementById('depth-result-container').classList.remove('hidden');
+    }
+    // ----------------------------
+
+    window.onload = () => {
+        initMap();
+        renderTable();
+        
+        document.getElementById('draw-circles-btn').addEventListener('click', drawCircles);
+        document.getElementById('reset-btn').addEventListener('click', resetAll);
+        document.getElementById('draw-chord-btn').addEventListener('click', drawChord);
+        document.getElementById('find-epicenter-btn').addEventListener('click', findEpicenter);
+    };
+
+</script>
+</body>
+</html>
