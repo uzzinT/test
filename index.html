@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR 코드 안녕</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- QRCode.js 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Lucide 아이콘 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* 추가적인 커스텀 스타일 (필요한 경우) */
+        .qr-container img {
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center p-4 font-sans text-gray-800">
+
+    <div class="bg-white rounded-2xl shadow-xl p-6 sm:p-8 w-full max-w-md transition-all duration-300">
+        
+        <!-- 헤더 -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-full mb-4">
+                <i data-lucide="qr-code" class="w-8 h-8"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-900">QR 코드 안녕</h1>
+            <p class="text-sm text-gray-500 mt-2">URL이나 텍스트를 입력하여 QR 코드를 만드세요.</p>
+        </div>
+
+        <!-- 입력 폼 -->
+        <div class="space-y-5">
+            <div>
+                <label for="qr-input" class="block text-sm font-medium text-gray-700 mb-1">내용 (URL 또는 텍스트)</label>
+                <input type="text" id="qr-input" placeholder="https://example.com" 
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors placeholder-gray-400">
+                <p id="error-msg" class="text-red-500 text-xs mt-1 hidden">내용을 입력해주세요.</p>
+            </div>
+
+            <div>
+                <label for="qr-size" class="block text-sm font-medium text-gray-700 mb-1">QR 코드 크기</label>
+                <select id="qr-size" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+                    <option value="128">작게 (128x128)</option>
+                    <option value="256" selected>중간 (256x256)</option>
+                    <option value="512">크게 (512x512)</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="qr-color" class="block text-sm font-medium text-gray-700 mb-1">QR 코드 색상</label>
+                <input type="color" id="qr-color" value="#000000" class="h-14 w-full p-1 border border-gray-300 rounded-lg cursor-pointer bg-white">
+            </div>
+
+            <button id="generate-btn" 
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
+                <i data-lucide="wand-2" class="w-5 h-5"></i>
+                QR 코드 생성하기
+            </button>
+        </div>
+
+        <!-- 결과 영역 -->
+        <div id="result-section" class="mt-8 hidden flex-col items-center opacity-0 transition-opacity duration-500 border-t border-gray-100 pt-8">
+            <div id="qrcode" class="qr-container bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6"></div>
+            
+            <button id="download-btn" 
+                class="w-full bg-gray-800 hover:bg-gray-900 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
+                <i data-lucide="download" class="w-5 h-5"></i>
+                이미지 다운로드
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // 아이콘 초기화
+        lucide.createIcons();
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const qrInput = document.getElementById('qr-input');
+            const qrSize = document.getElementById('qr-size');
+            const qrColor = document.getElementById('qr-color');
+            const generateBtn = document.getElementById('generate-btn');
+            const downloadBtn = document.getElementById('download-btn');
+            const qrCodeContainer = document.getElementById('qrcode');
+            const resultSection = document.getElementById('result-section');
+            const errorMsg = document.getElementById('error-msg');
+
+            let currentQRCode = null;
+
+            // QR 코드 생성 함수
+            function generateQRCode() {
+                const text = qrInput.value.trim();
+                const size = parseInt(qrSize.value);
+
+                // 입력값 검증
+                if (!text) {
+                    errorMsg.classList.remove('hidden');
+                    qrInput.classList.add('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+                    return;
+                }
+
+                // 에러 메시지 숨기기
+                errorMsg.classList.add('hidden');
+                qrInput.classList.remove('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+
+                // 기존 QR 코드 지우기
+                qrCodeContainer.innerHTML = '';
+                
+                // 결과 영역 표시 (애니메이션)
+                resultSection.classList.remove('hidden');
+                setTimeout(() => {
+                    resultSection.classList.remove('opacity-0');
+                    resultSection.classList.add('opacity-100');
+                }, 50);
+
+                // 새 QR 코드 생성
+                currentQRCode = new QRCode(qrCodeContainer, {
+                    text: text,
+                    width: size,
+                    height: size,
+                    colorDark : qrColor.value,
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H // 높은 오류 복원력
+                });
+            }
+
+            // 이벤트 리스너: 버튼 클릭
+            generateBtn.addEventListener('click', generateQRCode);
+
+            // 이벤트 리스너: 엔터 키 입력
+            qrInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    generateQRCode();
+                }
+            });
+
+            // 다운로드 기능
+            downloadBtn.addEventListener('click', async () => {
+                // QRCode.js는 canvas를 먼저 생성한 후 img 태그를 생성합니다.
+                const img = qrCodeContainer.querySelector('img');
+                const canvas = qrCodeContainer.querySelector('canvas');
+                
+                let imageUrl = '';
+
+                // img 태그에 src가 있으면 사용 (모바일 브라우저 호환성)
+                if (img && img.src && img.src.startsWith('data:image')) {
+                    imageUrl = img.src;
+                } else if (canvas) {
+                    // 캔버스에서 데이터 URL 추출
+                    imageUrl = canvas.toDataURL("image/png");
+                } else {
+                    alert('QR 코드를 다운로드할 수 없습니다.');
+                    return;
+                }
+
+                const defaultSafeName = qrInput.value.trim().replace(/[^a-z0-9]/gi, '_').toLowerCase().substring(0, 20) || 'qrcode';
+                const suggestedName = `qr_${defaultSafeName}.png`;
+
+                // 1. File System Access API 시도 (파일명 및 저장 경로 대화상자)
+                if (window.showSaveFilePicker) {
+                    try {
+                        const response = await fetch(imageUrl);
+                        const blob = await response.blob();
+                        
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: suggestedName,
+                            types: [{
+                                description: 'PNG 이미지 파일',
+                                accept: { 'image/png': ['.png'] },
+                            }],
+                        });
+                        const writable = await handle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        return; // 저장이 완료되면 함수 종료
+                    } catch (err) {
+                        // 사용자가 취소한 경우 그냥 종료
+                        if (err.name === 'AbortError') return; 
+                        // 보안 문제(iframe 등)로 API 사용 불가 시 아래의 폴백으로 넘어감
+                        console.warn("저장 대화상자를 열 수 없습니다. 기본 다운로드 방식으로 전환합니다.", err);
+                    }
+                }
+
+                // 2. 폴백: 기존 방식 + 파일명 입력창 (브라우저 설정에 따라 경로 지정창이 뜰 수 있음)
+                const fileName = prompt("저장할 파일명을 입력하세요 (확장자 제외):", `qr_${defaultSafeName}`);
+                if (fileName === null) return; // 취소 누름
+                
+                const downloadLink = document.createElement('a');
+                downloadLink.href = imageUrl;
+                downloadLink.download = `${fileName}.png`;
+                
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+            });
+        });
+    </script>
+</body>
+</html>
